@@ -28,29 +28,29 @@ type templateData struct {
 
 func main() {
 	var (
-		route        string
+		labelFilter  string
 		templateFile string
 		outputFile   string
 		reloadCmd    string
 		interval     time.Duration
 	)
 
-	flag.StringVar(&route, "route", "", "route label value to match")
+	flag.StringVar(&labelFilter, "label", "", "label filter for allocations (e.g. route:my-app)")
 	flag.StringVar(&templateFile, "template", "", "path to proxy config template")
 	flag.StringVar(&outputFile, "output", "", "path to write rendered config")
 	flag.StringVar(&reloadCmd, "reload-cmd", "", "command to run after config update")
 	flag.DurationVar(&interval, "interval", 5*time.Second, "poll interval")
 	flag.Parse()
 
-	if route == "" || templateFile == "" || outputFile == "" {
-		fmt.Fprintln(os.Stderr, "usage: trellis-proxy-sync -route <value> -template <path> -output <path> [-reload-cmd <cmd>] [-interval <duration>]")
+	if labelFilter == "" || templateFile == "" || outputFile == "" {
+		fmt.Fprintln(os.Stderr, "usage: trellis-proxy-sync -label <key:value> -template <path> -output <path> [-reload-cmd <cmd>] [-interval <duration>]")
 		os.Exit(1)
 	}
 
 	token := os.Getenv("TRELLIS_TOKEN")
 	addr := os.Getenv("TRELLIS_ADDR")
 	if token == "" || addr == "" {
-		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN and TRELLIS_ADDR must be set (use api_access: true)")
+		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN and TRELLIS_ADDR must be set (use api_access: true on the task group)")
 		os.Exit(1)
 	}
 
@@ -77,29 +77,29 @@ func main() {
 	defer ticker.Stop()
 
 	sync := func() {
-		services, err := c.ListDiscovery(ctx)
+		allocs, err := c.ListAllocations(ctx, labelFilter)
 		if err != nil {
-			log.Error("poll discovery", "error", err)
+			log.Error("poll allocations", "error", err)
 			return
 		}
 
 		var upstreams []upstream
-		for _, svc := range *services {
-			if svc.Labels["route"] != route || svc.Status != "healthy" {
+		for _, alloc := range *allocs {
+			if alloc.Status != "healthy" {
 				continue
 			}
 			weight := 1
-			if w, ok := svc.Labels["weight"]; ok {
+			if w, ok := alloc.Labels["weight"]; ok {
 				if parsed, err := strconv.Atoi(w); err == nil && parsed > 0 {
 					weight = parsed
 				}
 			}
 			port := 0
-			if len(svc.Ports) > 0 {
-				port = svc.Ports[0].ContainerPort
+			if len(alloc.Ports) > 0 {
+				port = alloc.Ports[0].HostPort
 			}
 			upstreams = append(upstreams, upstream{
-				Address: svc.Address,
+				Address: alloc.Address,
 				Port:    port,
 				Weight:  weight,
 			})
@@ -142,4 +142,3 @@ func main() {
 		}
 	}
 }
-
