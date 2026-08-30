@@ -85,18 +85,18 @@ func main() {
 
 		var upstreams []upstream
 		for _, alloc := range *allocs {
-			if alloc.Status != "healthy" {
+			if alloc.Status != "healthy" || alloc.Address == "" || len(alloc.Ports) == 0 {
+				continue
+			}
+			port := alloc.Ports[0].HostPort
+			if port <= 0 {
 				continue
 			}
 			weight := 1
-			if w, ok := alloc.Labels["weight"]; ok {
+			if w, ok := alloc.Labels["trellis/weight"]; ok {
 				if parsed, err := strconv.Atoi(w); err == nil && parsed > 0 {
 					weight = parsed
 				}
-			}
-			port := 0
-			if len(alloc.Ports) > 0 {
-				port = alloc.Ports[0].HostPort
 			}
 			upstreams = append(upstreams, upstream{
 				Address: alloc.Address,
@@ -115,7 +115,6 @@ func main() {
 		if rendered == lastConfig {
 			return
 		}
-		lastConfig = rendered
 
 		if err := os.WriteFile(outputFile, []byte(rendered), 0644); err != nil {
 			log.Error("write config", "error", err)
@@ -126,10 +125,11 @@ func main() {
 		if reloadCmd != "" {
 			if out, err := exec.CommandContext(ctx, "sh", "-c", reloadCmd).CombinedOutput(); err != nil {
 				log.Error("reload command failed", "error", err, "output", string(out))
-			} else {
-				log.Info("proxy reloaded")
+				return
 			}
+			log.Info("proxy reloaded")
 		}
+		lastConfig = rendered
 	}
 
 	sync()
