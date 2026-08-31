@@ -1,3 +1,4 @@
+// Command trellis-proxy-sync synchronizes proxy configuration from Trellis.
 package main
 
 import (
