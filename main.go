@@ -62,7 +62,7 @@ func main() {
 	addr := os.Getenv("TRELLIS_ADDR")
 	namespace := os.Getenv("TRELLIS_NAMESPACE")
 	if token == "" || addr == "" || namespace == "" {
-		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN, TRELLIS_ADDR, and TRELLIS_NAMESPACE must be set (use api_access: true on the task group)")
+		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN, TRELLIS_ADDR, and TRELLIS_NAMESPACE must be set (use api_access: namespace on the task group)")
 		os.Exit(1)
 	}
 
