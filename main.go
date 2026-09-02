@@ -4,6 +4,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,9 +13,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"text/template"
 	"time"
 
+	"github.com/clofour/trellis/internal/api"
 	"github.com/clofour/trellis/internal/client"
 )
 
@@ -29,29 +33,42 @@ type templateData struct {
 
 func main() {
 	var (
-		labelFilter  string
-		templateFile string
-		outputFile   string
-		reloadCmd    string
-		interval     time.Duration
+		labelFilter   string
+		templateFile  string
+		outputFile    string
+		reloadCmd     string
+		containerPort int
+		interval      time.Duration
 	)
 
 	flag.StringVar(&labelFilter, "label", "", "label filter for allocations (e.g. route:my-app)")
 	flag.StringVar(&templateFile, "template", "", "path to proxy config template")
 	flag.StringVar(&outputFile, "output", "", "path to write rendered config")
 	flag.StringVar(&reloadCmd, "reload-cmd", "", "command to run after config update")
+	flag.IntVar(&containerPort, "container-port", 0, "container port to select when allocations expose multiple ports")
 	flag.DurationVar(&interval, "interval", 5*time.Second, "poll interval")
 	flag.Parse()
 
 	if labelFilter == "" || templateFile == "" || outputFile == "" {
-		fmt.Fprintln(os.Stderr, "usage: trellis-proxy-sync -label <key:value> -template <path> -output <path> [-reload-cmd <cmd>] [-interval <duration>]")
+		fmt.Fprintln(os.Stderr, "usage: trellis-proxy-sync -label <key:value> -template <path> -output <path> [-container-port <port>] [-reload-cmd <cmd>] [-interval <duration>]")
+		os.Exit(1)
+	}
+	if containerPort < 0 || containerPort > 65535 {
+		fmt.Fprintln(os.Stderr, "container-port must be between 1 and 65535 when set")
 		os.Exit(1)
 	}
 
 	token := os.Getenv("TRELLIS_TOKEN")
 	addr := os.Getenv("TRELLIS_ADDR")
-	if token == "" || addr == "" {
-		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN and TRELLIS_ADDR must be set (use api_access: true on the task group)")
+	namespace := os.Getenv("TRELLIS_NAMESPACE")
+	if token == "" || addr == "" || namespace == "" {
+		fmt.Fprintln(os.Stderr, "TRELLIS_TOKEN, TRELLIS_ADDR, and TRELLIS_NAMESPACE must be set (use api_access: true on the task group)")
+		os.Exit(1)
+	}
+
+	tlsConfig, err := apiTLSConfig(addr, os.Getenv("TRELLIS_CA_CERT"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "configure Trellis API TLS:", err)
 		os.Exit(1)
 	}
 
@@ -68,7 +85,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c := client.NewServerClient(token, addr, nil)
+	c := client.NewNamespaceServerClient(token, addr, namespace, tlsConfig)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -86,11 +103,11 @@ func main() {
 
 		var upstreams []upstream
 		for _, alloc := range *allocs {
-			if alloc.Status != "healthy" || alloc.Address == "" || len(alloc.Ports) == 0 {
+			if alloc.Health != "healthy" || alloc.Address == "" || len(alloc.Ports) == 0 {
 				continue
 			}
-			port := alloc.Ports[0].HostPort
-			if port <= 0 {
+			port, ok := selectHostPort(alloc.Ports, containerPort)
+			if !ok {
 				continue
 			}
 			weight := 1
@@ -142,4 +159,33 @@ func main() {
 			sync()
 		}
 	}
+}
+
+func selectHostPort(ports []api.PortMapping, containerPort int) (int, bool) {
+	if containerPort == 0 {
+		if len(ports) == 0 || ports[0].HostPort <= 0 {
+			return 0, false
+		}
+		return ports[0].HostPort, true
+	}
+	for _, port := range ports {
+		if port.ContainerPort == containerPort && port.HostPort > 0 {
+			return port.HostPort, true
+		}
+	}
+	return 0, false
+}
+
+func apiTLSConfig(addr, caPEM string) (*tls.Config, error) {
+	if strings.HasPrefix(strings.TrimSpace(addr), "http://") || caPEM == "" {
+		return nil, nil
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM([]byte(caPEM)) {
+		return nil, fmt.Errorf("TRELLIS_CA_CERT does not contain a valid PEM certificate")
+	}
+	return &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, nil
 }
