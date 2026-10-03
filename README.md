@@ -13,7 +13,7 @@ Every `-interval` (default `5s`) it:
 3. Picks one port per allocation (see [Ports](#ports)) and a weight from the `trellis/weight` label (see [Weights](#weights)).
 4. Renders the template. If the output differs from the last configuration it applied, it writes the file atomically and runs `-reload-cmd`.
 
-A failed poll, render, or write leaves the existing configuration file in place and is retried on the next tick. A failed reload is also retried: a configuration counts as applied only once the reload command succeeds. When the poll succeeds but no allocation is healthy, the template is rendered with an empty upstream list, so write the template so that an empty list still produces a configuration your proxy accepts.
+A failed poll, render, or write leaves the existing configuration file in place and is retried on the next tick. A failed reload is also retried: a configuration counts as applied only once the reload command succeeds. When the poll succeeds but no allocation is healthy, the template is rendered with an empty upstream list, so write the template so that an empty list still produces a configuration your proxy accepts. A render that is entirely empty is treated as unchanged and is never written, so a template should always produce some output.
 
 ## Trellis API access
 
@@ -62,6 +62,9 @@ upstream app {
 {{- range .Upstreams }}
     server {{ .Address }}:{{ .Port }} weight={{ .Weight }};
 {{- end }}
+{{- if not .Upstreams }}
+    server 127.0.0.1:1 down;
+{{- end }}
 }
 
 server {
@@ -72,7 +75,7 @@ server {
 }
 ```
 
-nginx rejects an empty `upstream` block; guard it with `{{ if .Upstreams }}` or add a fallback `server ... down;` entry if the backends may all be unhealthy.
+nginx rejects an empty `upstream` block, so the example emits a placeholder entry marked `down` when no backend is healthy. The configuration stays valid and requests fail with `502` until a backend is healthy again.
 
 ## Ports
 
@@ -137,7 +140,7 @@ go test ./...
 
 ### Releases
 
-Push a tag of the form `vX.Y.Z` on `main`. The [release workflow](.github/workflows/release.yaml) runs the tests, builds a static `linux/amd64` binary, and attaches `trellis-proxy-sync_linux_x64.tar.gz` to a GitHub release with generated notes. To build the same artifact locally:
+Push a tag of the form `vX.Y.Z` on `main`. The [release workflow](.github/workflows/release.yaml) repeats the tidy, test, and vet checks, builds a static `linux/amd64` binary, and attaches `trellis-proxy-sync_linux_x64.tar.gz` to a GitHub release with generated notes. To build the same artifact locally:
 
 ```sh
 mkdir -p bin

@@ -2,7 +2,7 @@
 
 **Prerequisites:** a Trellis cluster with at least five nodes where port 80 is free, and a proxy fed by `trellis-proxy-sync` whose template uses `.Weight`.
 
-These manifests are copies of the weighted-canary fixtures in Trellis's [`examples/deployment-strategies`](https://github.com/overfold/trellis/tree/main/examples/deployment-strategies), where they are validated against the job schema. Trellis has no canary resource: a canary is a second job that shares a route label with the stable release and is weighted by the proxy.
+These manifests are copies of the weighted-canary fixtures in Trellis's [`examples/deployment-strategies`](https://github.com/overfold/trellis/tree/main/examples/deployment-strategies), where Trellis's test suite validates them against the job schema. These copies are not validated here; if they disagree, the Trellis copies are authoritative. Trellis has no canary resource: a canary is a second job that shares a route label with the stable release and is weighted by the proxy.
 
 `stable.yaml` and `canary.yaml` share `route:shop-weighted` and differ in `track` and `trellis/weight`:
 
