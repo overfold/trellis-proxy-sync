@@ -1,0 +1,13 @@
+name: shop-stable
+namespace: default
+task_groups:
+  - name: web
+    count: 4
+    labels: {route: shop-weighted, track: stable, trellis/weight: "100"}
+    tasks:
+      - name: web
+        image: docker.io/library/nginx:1.26-alpine
+        networking:
+          mode: host
+          ports: [{port: 80}]
+        health_check: {type: http, port: 80, path: /}

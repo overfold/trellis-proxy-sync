@@ -1,0 +1,18 @@
+# Build output
+/bin/
+/dist/
+/trellis-proxy-sync
+*.tar.gz
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor/IDE
+.idea/
+.vscode/
